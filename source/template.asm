@@ -135,31 +135,34 @@
 		.end_macro
 		.macro	call (%label, %arg0, %arg1, %arg2, %arg3, %alloc)
 		extend_stack
-		sw	$a0, _rev
+		sw	%arg0, _rev
+		sw	%arg1, _rev+4
+		sw	%arg2, _rev+8
+		sw	%arg3, _rev+12
 		li	$a0, %alloc
 		addiu	$a0, $a0, 4
 		subu	$sp, $sp, $a0
 		sw	$fp, 0($sp)
 		lw	$a0, _rev
-		move	$a0, %arg0
-		move	$a1, %arg1
-		move	$a2, %arg2
-		move	$a3, %arg3
+		lw	$a1, _rev+4
+		lw	$a2, _rev+8
+		lw	$a3, _rev+12
 		jal	%label
 		.end_macro
 		.macro	calr (%reg, %arg0, %arg1, %arg2, %arg3, %alloc)
 		extend_stack
-		move	$t9, %reg
-		sw	$a0, _rev
+		sw	%arg0, _rev
+		sw	%arg1, _rev+4
+		sw	%arg2, _rev+8
+		sw	%arg3, _rev+12
 		li	$a0, %alloc
 		addiu	$a0, $a0, 4
 		subu	$sp, $sp, $a0
 		sw	$fp, 0($sp)
 		lw	$a0, _rev
-		move	$a0, %arg0
-		move	$a1, %arg1
-		move	$a2, %arg2
-		move	$a3, %arg3
+		lw	$a1, _rev+4
+		lw	$a2, _rev+8
+		lw	$a3, _rev+12
 		jalr	$t9
 		.end_macro	
 		.macro	return
@@ -176,15 +179,54 @@
 		.end_macro
 		.macro	sys (%code, %arg0, %arg1)
 		m_extend_stack
-		li	$v0, %code
 		move	$a0, %arg0
 		move	$a1, %arg1
+		li	$v0, %code
 		syscall
 		sw	$v0, _rev
 		sw	$a0, _rev+4
 		sw	$a1, _rev+8
 		m_shrink_stack
 		.end_macro
+		.macro	print_char (%char)
+		m_extend_stack
+		addiu	$a0, $0, %char
+		sys (11, $a0, $0)
+		m_shrink_stack
+		.end_macro	
+		.macro	print_u (%reg)
+		sys (36, %reg, $0)
+		print_char (10)
+		.end_macro	
+		.macro	print_hex (%reg)
+		sys (34, %reg, $0)
+		print_char (10)
+		.end_macro	
+		.macro time(%offset, %reg)
+		sys (30, $0, $0)
+		lw	%reg, _rev+4
+		addiu	%reg, %reg, %offset
+		.end_macro	
+		.macro srand (%seed)
+		m_extend_stack
+		move	$a1, %seed
+		sys (40, $0, $a1)
+		m_shrink_stack
+		.end_macro	
+		.macro	rand (%reg)
+		sys (41, $0, $0)
+		lw	%reg, _rev+4
+		.end_macro	
+		.macro randr (%u, %reg)
+		sys (42, $0, %u)
+		lw	%reg, _rev+4
+		.end_macro	
+		.macro	RAND_MAX
+		0xffffffff
+		.end_macro	
+		.macro	sleep (%ms)
+		sys (32, %ms, $0)
+		.end_macro	
 		.macro exit
 		sys (10, $0, $0)
 		.end_macro	
@@ -196,6 +238,9 @@
 		.end_macro
 		.macro	sizeof (%struct, %reg)
 		lw	%reg, %struct+4
+		.end_macro		
+		.macro	sizeofv (%struct, %reg)
+		lw	%reg, 4(%struct)
 		.end_macro	
 		.macro	elem (%tag, %addr, %reg)
 		lw	%reg, %tag
@@ -208,12 +253,60 @@
 		m_shrink_stack
 		.end_macro	
 		.macro	iter (%addr, %label, %dir, %step)
+		sw	%dir, _rev
 		addiu	%dir, %dir, 2
 		sll	%dir, %dir, 2
 		lw	%dir, %label(%dir)
 		mulu	%dir, %dir, %step
 		addu	%addr, %addr, %dir
+		lw	%dir, _rev
+		.end_macro
+		.macro	iterv (%addr, %tens, %dir, %step)
+		sw	%dir, _rev
+		addiu	%dir, %dir, 2
+		sll	%dir, %dir, 2
+		addu	%dir, %dir, %tens
+		lw	%dir, 0(%dir)
+		mulu	%dir, %dir, %step
+		addu	%addr, %addr, %dir
+		lw	%dir, _rev
+		.end_macro
+		.macro	tensor_get (%addr, %label, %index)
+		m_extend_stack
+		move	$v0, %addr
+		move	$v1, %index
+		la	$a0, %label
+		call (_tensor_get, $v0, $a0, $v1, $0, 0)
+		collect ($v0, $0)
+		m_shrink_stack
 		.end_macro	
+		.macro	tens_get (%addr, %tens, %index)
+		m_extend_stack
+		move	$v0, %addr
+		move	$v1, %index
+		move	$a0, %tens
+		call (_tensor_get, $v0, $a0, $v1, $0, 0)
+		collect ($v0, $0)
+		m_shrink_stack
+		.end_macro
+		.macro	tensor_index (%addr, %label, %ele, %index)
+		m_extend_stack
+		move	$v0, %index
+		move	$v1, %ele
+		move	$a0, %addr
+		la	$a1, %label
+		call (_tensor_index, $a0, $a1, $v1, $v0, 0)
+		m_shrink_stack
+		.end_macro	
+		.macro	tens_index (%addr, %tens, %ele, %index)
+		m_extend_stack
+		move	$v0, %index
+		move	$v1, %ele
+		move	$a0, %addr
+		move	$a1, %tens
+		call (_tensor_index, $a0, $a1, $v1, $v0, 0)
+		m_shrink_stack
+		.end_macro
 		.macro	sbrk (%byte, %reg)
 		lw	%reg, _heap+8
 		sw	%reg, _heap
@@ -234,6 +327,18 @@
 		subu	$v1, $v1, $v0
 		m_shrink_stack
 		.end_macro	
+		.macro	inverse (%reg)
+		nor	%reg, %reg, $0
+		addiu	%reg, %reg, 2
+		.end_macro
+		.macro	inrange (%va, %lo, %hi, %r)
+		m_extend_stack
+		slt	%r, %va, %lo
+		slt	%va, %hi, %va
+		nor	$v0, %r, %va
+		m_shrink_stack
+		collect (%r, $0)
+		.end_macro	
 		# macro start
 		
 		# macro end
@@ -245,7 +350,13 @@ _Meta_prev:	.word	4
 _Meta_size:	.word	4
 _rev:		.space	32
 		# data start
-		
+			#tensor-lable:	align, dim, l1, l2, l3
+			
+			#struct:	align, size	
+			#struct_e1: 	l1 
+			#struct_e2: 	l2	
+			#align = 2^(align-1), size = in #elem -> in byte, l: ele size -> offset
+
 		# data end
 		.text
 main:		# functions start
@@ -355,7 +466,8 @@ _struct_setd:	sw	$0, 0($a0)
 		return
 _tensor:	lw	$t0, 4($a0)
 		lw	$t1, 0($a0)
-		move	$t3, $a0
+		sw	$t0, 0($a0)
+		addiu	$t3, $a0, 4
 _tensor_lp:	beqz	$t0, _tensor_set
 		subiu	$t0, $t0, 1
 		addiu	$t3, $t3, 4
@@ -365,19 +477,52 @@ _tensor_lp:	beqz	$t0, _tensor_set
 		b	_tensor_lp
 _tensor_set:	sw	$t1, 4($a0)
 		return
+_tensor_get:	lw	$t0, 0($a1)
+		addiu	$t1, $a1, 8
+		move	$v0, $0
+_tens_glp:	beqz	$t0, _tens_getd
+		subiu	$t0, $t0, 1
+		lw	$t2, 0($t1)
+		addiu	$t1, $t1, 4
+		lw	$t3, 0($a2)
+		addiu	$a2, $a2, 4
+		mulu	$t3, $t3, $t2
+		addu	$v0, $v0, $t3
+		b	_tens_glp
+_tens_getd:	addu	$v0, $v0, $a0
+		return
+_tensor_index:	lw	$t0, 0($a1)
+		addiu	$t1, $a1, 4
+		sll	$t2, $t0, 2
+		addu	$t1, $t1, $t2
+		addu	$v0, $v0, $t2
+		subiu	$v0, $v0, 4
+		addu	$v0, $v0, $a3
+		subu	$t3, $a2, $a0
+_tens_ilp:	beqz	$t0, _tens_iset
+		subiu	$t0, $t0, 1
+		lw	$t2, 0($t1)
+		subiu	$t1, $t1, 4
+		divu	$t3, $t2
+		mflo	$t4
+		sw	$t4, 0($v0)
+		subiu	$v0, $v0, 4
+		mfhi	$t3
+		b	_tens_ilp
+_tens_iset:	return
 memset:		move	$v0, $a0
 		move	$t4, $a2
-		mulu	$t5, $t1, 0x01010101
+		mulu	$t5, $t4, 0x01010101
 		subiu	$t3, $a0, 4
 		srl	$t0, $a1, 10
 		sll	$t2, $t0, 10
-		subu	$t1, $a2, $t2
+		subu	$t1, $a1, $t2
 _set_loop1:	beqz	$t0, _set_loop2
 		_cpy_1024 (addiu, 4, _set_4)
 		subiu	$t0, $t0, 1
 		b	_set_loop1
 _set_loop2:	beqz	$t1, _set_done
-		sb	$t4, 0($t3)
+		sb	$t4, 4($t3)
 		addiu	$t3, $t3, 1
 		subiu	$t1, $t1, 1
 		b	_set_loop2
@@ -386,13 +531,13 @@ memclr:		move	$v0, $a0
 		subiu	$t3, $a0, 4
 		srl	$t0, $a1, 10
 		sll	$t2, $t0, 10
-		subu	$t1, $a2, $t2
+		subu	$t1, $a1, $t2
 _clr_loop1:	beqz	$t0, _clr_loop2
 		_cpy_1024 (addiu, 4, _clr_4)
 		subiu	$t0, $t0, 1
 		b	_clr_loop1
 _clr_loop2:	beqz	$t1, _clr_done
-		sb	$0, 0($t3)
+		sb	$0, 4($t3)
 		addiu	$t3, $t3, 1
 		subiu	$t1, $t1, 1
 		b	_clr_loop2

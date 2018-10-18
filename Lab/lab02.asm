@@ -38,7 +38,7 @@ comfort:.asciiz "\n\n You lose. The number was "
 	syscall
 	li	$v0, 42
 	move	$a0, $0
-	li	$a1, 10
+	li	$a1, 8
 	syscall
 	move	$s0, $a0
 	la	$a1, cases
